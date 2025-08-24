@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, memo } from "react";
 
 import { handleFileUpload } from "../utils/handleFileUpload"; // Adjust path based on your project structure
 import { useUser } from "@clerk/nextjs";
+
 import {
   ThemeProvider,
   createTheme,
