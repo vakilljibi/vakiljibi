@@ -1,0 +1,9 @@
+{
+  "platform": "next",
+  "build": {
+    "command": "npm install -g npm@11.4.2 && npm install --force && npm run build"
+  },
+  "start": {
+    "command": "npm start"
+  }
+}
