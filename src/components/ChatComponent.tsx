@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, memo } from "react";
+
 import { handleFileUpload } from "../utils/handleFileUpload"; // Adjust path based on your project structure
 import { useUser } from "@clerk/nextjs";
+
 import {
   ThemeProvider,
   createTheme,
@@ -33,7 +35,7 @@ import { saveAs } from "file-saver";
 import JSZip from "jszip";
 import ChatList from "./ChatList";
 import { parseMessageContent } from "../utils/parseMessage";
-
+ 
 // Interface for messages in the UI
 interface Message {
   role: string;
@@ -59,7 +61,7 @@ interface ChatMessage {
 
 // Interface for /api/check-response response
 interface ChatResponse {
-  status: "pending" | "completed";
+   status: "pending" | "completed" | "processing";
   message?: string;
   wordDocument?: string | null;
   excelFile?: string | null;
@@ -214,6 +216,7 @@ declare module "@mui/material/styles" {
 }
 
 function Chat() {
+  const messagesContainerRef = useRef<HTMLDivElement>(null); // NEW: Ref for the container Box
   const { user } = useUser();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -232,7 +235,7 @@ function Chat() {
   const [isDownloading, setIsDownloading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recorderRef = useRef<MicRecorder | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const handleSendRef = useRef<(() => Promise<void>) | undefined>(undefined);
@@ -417,7 +420,65 @@ function Chat() {
       return false;
     }
   }, []);
+// --- NEW HELPER FUNCTION TO HANDLE API RESPONSE ---
+ const handleApiResponse = useCallback((data: ChatResponse) => {
+    if (data.status === "completed") {
+      // ... (logic for completed status)
+      const assistantMessage = {
+        role: "assistant",
+        content: data.message || "",
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+      try {
+        setWordDocument(
+          data.wordDocument ? JSON.parse(data.wordDocument) : null
+        );
+        setExcelFile(data.excelFile ? JSON.parse(data.excelFile) : null);
+        const rawForms = data.forms || [];
+        const validForms = Array.isArray(rawForms)
+          ? rawForms.filter(isValidUrl)
+          : [];
+        setForms(validForms);
+      } catch (e) {
+        console.error("Error parsing immediate JSON data:", e);
+        setError("خطا در تجزیه داده‌های پاسخ.");
+      }
+    } else if (data.status === "processing") {
+      // ... (logic for processing status)
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            "در حال پردازش درخواست شما... این فرآیند ممکن است تا ۱۰ دقیقه طول بکشد.",
+        },
+      ]);
+      setIsPolling(true);
 
+      let attempts = 0;
+      const maxAttempts = 10;
+      pollingRef.current = setInterval(async () => {
+        if (!sessionId) return;
+        attempts += 1;
+        console.log(`Polling attempt ${attempts} for session ${sessionId}`);
+        const responseReceived = await checkResponse(sessionId);
+        if (responseReceived || attempts >= maxAttempts) {
+          if (pollingRef.current) clearInterval(pollingRef.current);
+          setIsPolling(false);
+          if (!responseReceived && attempts >= maxAttempts) {
+            setError("پاسخ در زمان مورد انتظار دریافت نشد.");
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                content: "🚫 خطا: پاسخ در زمان مورد انتظار دریافت نشد.",
+              },
+            ]);
+          }
+        }
+      }, 60000);
+    }
+  }, [sessionId, checkResponse]); // Its dependencies are sessionId and checkResponse
   const createNewSession = useCallback(async (clerkId: string) => {
     try {
       const response = await fetch("/api/sessions", {
@@ -502,7 +563,7 @@ function Chat() {
 
   type StopRecordingHandler = (save: boolean) => Promise<void>;
 
-  const handleVoiceUpload = useCallback(
+const handleVoiceUpload = useCallback(
     async (file: File) => {
       if (!user?.id || !sessionId) {
         setError("کاربر احراز هویت نشده است یا جلسه فعال یافت نشد.");
@@ -511,28 +572,22 @@ function Chat() {
       }
 
       setIsProcessing(true);
-      const systemMessage = {
-        role: "assistant",
-        content: "در حال پردازش فایل صوتی...",
-      };
-      setMessages((prev) => [...prev, systemMessage]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "در حال پردازش فایل صوتی..." },
+      ]);
 
       try {
-        // Convert file to base64
         const arrayBuffer = await file.arrayBuffer();
         const audioBase64 = Buffer.from(arrayBuffer).toString("base64");
 
-        // Enforce 2MB size limit
         if (file.size > 2 * 1024 * 1024) {
           throw new Error("فایل صوتی باید کمتر از ۲ مگابایت باشد.");
         }
 
-        // Send to /api/voice with mimeType
         const response = await fetch("/api/voice", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             audio: audioBase64,
             clerkId: user.id,
@@ -546,21 +601,11 @@ function Chat() {
           throw new Error(data.message || "Failed to process audio");
         }
 
-        // Use the transcribed text directly without setting input state
         const transcribedText = data.message;
-
-        // Add user message with transcribed text
         const userMessage = { role: "user", content: transcribedText };
         setMessages((prev) => [...prev, userMessage]);
 
-        // Directly call the API instead of using handleSend
         await activateSession(user.id, sessionId);
-
-        console.log("Sending legal query to /api/legal-query:", {
-          clerkId: user.id,
-          text: transcribedText.substring(0, 50) + "...",
-          sessionId,
-        });
 
         const legalResponse = await fetch("/api/legal-query", {
           method: "POST",
@@ -574,65 +619,27 @@ function Chat() {
 
         const responseText = await legalResponse.text();
         console.log(
-          `Legal query API response: ${responseText.substring(
-            0,
-            50
-          )}..., status: ${legalResponse.status}`
+          `Legal query API response: ${responseText.substring(0, 50)}..., status: ${legalResponse.status}`
         );
 
-        if (!legalResponse.ok) {
+        if (!legalResponse.ok && legalResponse.status !== 202) { // Allow 202 to pass through
           let errorData;
           try {
             errorData = JSON.parse(responseText);
           } catch {
-            throw new Error(
-              `Failed to initiate legal query: HTTP ${legalResponse.status}`
-            );
+            throw new Error(`Failed to initiate legal query: HTTP ${legalResponse.status}`);
           }
-          throw new Error(
-            errorData.error ||
-              `Failed to initiate legal query: HTTP ${legalResponse.status}`
-          );
+          throw new Error(errorData.error || `Failed to initiate legal query: HTTP ${legalResponse.status}`);
         }
 
-        const legalData = JSON.parse(responseText);
+        const legalData: ChatResponse = JSON.parse(responseText);
         console.log("Parsed API response:", legalData);
+        
+        // Use the helper function to handle the response
+        handleApiResponse(legalData);
 
-        if (legalData.status === "processing") {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              content:
-                "در حال پردازش درخواست شما... این فرآیند ممکن است بین سه الی پنج دقیقه طول بکشد.",
-            },
-          ]);
-          setIsPolling(true);
-
-          let attempts = 0;
-          const maxAttempts = 10;
-          pollingRef.current = setInterval(async () => {
-            attempts += 1;
-            console.log(`Polling attempt ${attempts} for session ${sessionId}`);
-            const responseReceived = await checkResponse(sessionId);
-            if (responseReceived || attempts >= maxAttempts) {
-              if (pollingRef.current) clearInterval(pollingRef.current);
-              setIsPolling(false);
-              if (!responseReceived && attempts >= maxAttempts) {
-                setError("پاسخ در زمان مورد انتظار دریافت نشد.");
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    role: "assistant",
-                    content: "🚫 خطا: پاسخ در زمان مورد انتظار دریافت نشد.",
-                  },
-                ]);
-              }
-            }
-          }, 60000);
-        }
-      } catch (e) {
-        const errorMessage = e instanceof Error ? e.message : "خطای ناشناخته";
+      } catch (e: unknown) {
+        const errorMessage = e instanceof Error ? e.message : "An unknown error occurred";
         console.error("Failed to process voice upload:", errorMessage);
         setError(`خطا در پردازش فایل صوتی: ${errorMessage}`);
         setMessages((prev) => [
@@ -643,7 +650,7 @@ function Chat() {
         setIsProcessing(false);
       }
     },
-    [user, sessionId, activateSession, checkResponse]
+    [user, sessionId, activateSession, handleApiResponse] // Add the helper to dependencies
   );
 
   useEffect(() => {
@@ -678,13 +685,12 @@ function Chat() {
 
   type SendHandler = () => Promise<void>;
 
-  const handleSend: SendHandler = useCallback(async () => {
+const handleSend: SendHandler = useCallback(async () => {
     if (isRecording) {
       console.log("handleSend ignored: Recording in progress");
       await handleStopRecording(true);
       return;
     }
-    console.log("handleSend states:", { input, fileContent });
     if (!input.trim() && fileContent === null) {
       console.log("Validation failed: No input or file content");
       setError("لطفاً متن پرس‌وجو یا فایل را وارد کنید.");
@@ -711,22 +717,17 @@ function Chat() {
     setIsProcessing(true);
     setError(null);
 
+    const messageContent = input.trim()
+      ? `${input}${fileContent ? `\n\nمحتوای فایل:\n${fileContent}` : ""}`
+      : `محتوای فایل:\n${fileContent ?? ""}`;
+
+    setMessages((prev) => [...prev, { role: "user", content: messageContent }]);
+    // Clear input immediately for better UX
+    setInput("");
+    setFileContent(null);
+
     try {
       await activateSession(user.id, sessionId);
-      let messageContent = input;
-      if (fileContent) {
-        messageContent = input.trim()
-          ? `${input}\n\nمحتوای فایل:\n${fileContent}`
-          : `محتوای فایل:\n${fileContent}`;
-      }
-      const userMessage = { role: "user", content: messageContent };
-      setMessages((prev) => [...prev, userMessage]);
-
-      console.log("Sending legal query to /api/legal-query:", {
-        clerkId: user.id,
-        text: messageContent.substring(0, 50) + "...",
-        sessionId,
-      });
 
       const response = await fetch("/api/legal-query", {
         method: "POST",
@@ -740,65 +741,27 @@ function Chat() {
 
       const responseText = await response.text();
       console.log(
-        `Legal query API response: ${responseText.substring(
-          0,
-          50
-        )}..., status: ${response.status}`
+        `Legal query API response: ${responseText.substring(0, 50)}..., status: ${response.status}`
       );
 
-      if (!response.ok) {
+      if (!response.ok && response.status !== 202) { // Allow 202 to pass through
         let errorData;
         try {
           errorData = JSON.parse(responseText);
         } catch {
-          throw new Error(
-            `Failed to initiate legal query: HTTP ${response.status}`
-          );
+          throw new Error(`Failed to initiate legal query: HTTP ${response.status}`);
         }
-        throw new Error(
-          errorData.error ||
-            `Failed to initiate legal query: HTTP ${response.status}`
-        );
+        throw new Error(errorData.error || `Failed to initiate legal query: HTTP ${response.status}`);
       }
-
-      const data = JSON.parse(responseText);
+      
+      const data: ChatResponse = JSON.parse(responseText);
       console.log("Parsed API response:", data);
+      
+      // Use the helper function to handle the response
+      handleApiResponse(data);
 
-      if (data.status === "processing") {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content:
-              "در حال پردازش درخواست شما... این فرآیند ممکن است تا ۱۰ دقیقه طول بکشد.",
-          },
-        ]);
-        setIsPolling(true);
-
-        let attempts = 0;
-        const maxAttempts = 10;
-        pollingRef.current = setInterval(async () => {
-          attempts += 1;
-          console.log(`Polling attempt ${attempts} for session ${sessionId}`);
-          const responseReceived = await checkResponse(sessionId);
-          if (responseReceived || attempts >= maxAttempts) {
-            if (pollingRef.current) clearInterval(pollingRef.current);
-            setIsPolling(false);
-            if (!responseReceived && attempts >= maxAttempts) {
-              setError("پاسخ در زمان مورد انتظار دریافت نشد.");
-              setMessages((prev) => [
-                ...prev,
-                {
-                  role: "assistant",
-                  content: "🚫 خطا: پاسخ در زمان مورد انتظار دریافت نشد.",
-                },
-              ]);
-            }
-          }
-        }, 60000);
-      }
     } catch (e: unknown) {
-      const errorMessage = e instanceof Error ? e.message : "خطای ناشناخته";
+      const errorMessage = e instanceof Error ? e.message : "An unknown error occurred";
       console.error("خطا در ارسال پیام:", errorMessage);
       setError(`خطا: ${errorMessage}`);
       setMessages((prev) => [
@@ -807,9 +770,6 @@ function Chat() {
       ]);
     } finally {
       setIsProcessing(false);
-      setIsLoading(false);
-      setInput("");
-      setFileContent(null);
     }
   }, [
     user,
@@ -820,9 +780,9 @@ function Chat() {
     isLoading,
     isPolling,
     isRecording,
-    checkResponse,
     activateSession,
     handleStopRecording,
+    handleApiResponse, // Add the helper to dependencies
   ]);
 
   useEffect(() => {
@@ -1502,11 +1462,14 @@ function Chat() {
     init();
   }, [user, handleActiveSession, createNewSession]);
 
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+   useEffect(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
     }
-  }, [messages]);
+  }, [messages]); // Trigger on messages change
 
   if (!user) {
     return (
@@ -1526,7 +1489,7 @@ function Chat() {
           flexDirection: "column",
           bgcolor: "#000000",
           borderRadius: "20px",
-          p: 3,
+          p: 1,
           gap: 2,
           direction: "rtl",
         }}
@@ -1572,7 +1535,8 @@ function Chat() {
         </Collapse>
 
        <Box
-  className="messages"
+          className="messages"
+           ref={messagesContainerRef} // NEW: Attach ref here
   sx={{
     flexGrow: 1,
     maxHeight: "60vh",
@@ -1758,7 +1722,7 @@ function Chat() {
               </IconButton>
             </Box>
           </Collapse>
-          <div ref={messagesEndRef} />
+      
         </Box>
 
         {/* =============================================================== */}

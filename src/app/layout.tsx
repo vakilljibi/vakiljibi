@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
+import { dark } from "@clerk/themes"; // <-- 1. Import Clerk's dark theme
+import { faIR } from "@clerk/localizations"; // <-- 2. Import Persian localization
 import { FormProvider } from "@/context/FormContext";
 import Navbar from "@/components/Navbar";
 import ThemeProviderWrapper from "@/components/Themewraper";
-import Footer from "@/components/Footer"; // We'll create this component
+import Footer from "@/components/Footer";
 
 export const metadata: Metadata = {
   title: "وکیل جیبی - مشاوره حقوقی هوشمند با هوش مصنوعی | ایران",
@@ -37,7 +39,33 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    // 3. Add the localization and appearance props to the provider
+    <ClerkProvider
+      localization={faIR}
+      appearance={{
+        baseTheme: dark,
+        variables: {
+          colorPrimary: "rgb(252, 202, 71)",
+          colorText: "rgb(236, 236, 236)",
+          colorBackground: "rgb(18, 18, 32)",
+        },
+        elements: {
+          formButtonPrimary: {
+            "&:hover": {
+              backgroundColor: "rgb(252, 202, 71)",
+              filter: "brightness(1.1)",
+            },
+          },
+          userButtonPopoverCard: {
+            backgroundColor: "rgb(18, 18, 32)",
+            borderColor: "rgba(252, 202, 71, 0.3)",
+          },
+          userButtonPopoverActionButtonIcon: {
+            color: "rgb(252, 202, 71)",
+          },
+        },
+      }}
+    >
       <FormProvider>
         <html lang="fa" dir="rtl">
           <head>

@@ -1,10 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, memo } from "react";
-
 import { handleFileUpload } from "../utils/handleFileUpload"; // Adjust path based on your project structure
 import { useUser } from "@clerk/nextjs";
-
 import {
   ThemeProvider,
   createTheme,
@@ -20,7 +18,7 @@ import {
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import MicIcon from "@mui/icons-material/Mic";
-import AddIcon from "@mui/icons-material/Add"; // <-- 1. Import AddIcon
+import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import DownloadIcon from "@mui/icons-material/Download";
 import DescriptionIcon from "@mui/icons-material/Description";
@@ -35,7 +33,7 @@ import { saveAs } from "file-saver";
 import JSZip from "jszip";
 import ChatList from "./ChatList";
 import { parseMessageContent } from "../utils/parseMessage";
- 
+
 // Interface for messages in the UI
 interface Message {
   role: string;
@@ -61,7 +59,7 @@ interface ChatMessage {
 
 // Interface for /api/check-response response
 interface ChatResponse {
-   status: "pending" | "completed" | "processing";
+  status: "pending" | "completed" | "processing";
   message?: string;
   wordDocument?: string | null;
   excelFile?: string | null;
@@ -133,9 +131,17 @@ const theme = createTheme({
     fontSize: 16,
     h5: {
       fontWeight: 700,
+      fontSize: "1.5rem",
+      "@media (max-width:600px)": {
+        fontSize: "1.25rem",
+      },
     },
     body1: {
       lineHeight: 1.7,
+      fontSize: "1rem",
+      "@media (max-width:600px)": {
+        fontSize: "0.95rem",
+      },
     },
   },
   components: {
@@ -216,7 +222,7 @@ declare module "@mui/material/styles" {
 }
 
 function Chat() {
-  const messagesContainerRef = useRef<HTMLDivElement>(null); // NEW: Ref for the container Box
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const { user } = useUser();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -420,65 +426,68 @@ function Chat() {
       return false;
     }
   }, []);
-// --- NEW HELPER FUNCTION TO HANDLE API RESPONSE ---
- const handleApiResponse = useCallback((data: ChatResponse) => {
-    if (data.status === "completed") {
-      // ... (logic for completed status)
-      const assistantMessage = {
-        role: "assistant",
-        content: data.message || "",
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-      try {
-        setWordDocument(
-          data.wordDocument ? JSON.parse(data.wordDocument) : null
-        );
-        setExcelFile(data.excelFile ? JSON.parse(data.excelFile) : null);
-        const rawForms = data.forms || [];
-        const validForms = Array.isArray(rawForms)
-          ? rawForms.filter(isValidUrl)
-          : [];
-        setForms(validForms);
-      } catch (e) {
-        console.error("Error parsing immediate JSON data:", e);
-        setError("خطا در تجزیه داده‌های پاسخ.");
-      }
-    } else if (data.status === "processing") {
-      // ... (logic for processing status)
-      setMessages((prev) => [
-        ...prev,
-        {
+  // --- NEW HELPER FUNCTION TO HANDLE API RESPONSE ---
+  const handleApiResponse = useCallback(
+    (data: ChatResponse) => {
+      if (data.status === "completed") {
+        // ... (logic for completed status)
+        const assistantMessage = {
           role: "assistant",
-          content:
-            "در حال پردازش درخواست شما... این فرآیند ممکن است تا ۱۰ دقیقه طول بکشد.",
-        },
-      ]);
-      setIsPolling(true);
-
-      let attempts = 0;
-      const maxAttempts = 10;
-      pollingRef.current = setInterval(async () => {
-        if (!sessionId) return;
-        attempts += 1;
-        console.log(`Polling attempt ${attempts} for session ${sessionId}`);
-        const responseReceived = await checkResponse(sessionId);
-        if (responseReceived || attempts >= maxAttempts) {
-          if (pollingRef.current) clearInterval(pollingRef.current);
-          setIsPolling(false);
-          if (!responseReceived && attempts >= maxAttempts) {
-            setError("پاسخ در زمان مورد انتظار دریافت نشد.");
-            setMessages((prev) => [
-              ...prev,
-              {
-                role: "assistant",
-                content: "🚫 خطا: پاسخ در زمان مورد انتظار دریافت نشد.",
-              },
-            ]);
-          }
+          content: data.message || "",
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+        try {
+          setWordDocument(
+            data.wordDocument ? JSON.parse(data.wordDocument) : null
+          );
+          setExcelFile(data.excelFile ? JSON.parse(data.excelFile) : null);
+          const rawForms = data.forms || [];
+          const validForms = Array.isArray(rawForms)
+            ? rawForms.filter(isValidUrl)
+            : [];
+          setForms(validForms);
+        } catch (e) {
+          console.error("Error parsing immediate JSON data:", e);
+          setError("خطا در تجزیه داده‌های پاسخ.");
         }
-      }, 60000);
-    }
-  }, [sessionId, checkResponse]); // Its dependencies are sessionId and checkResponse
+      } else if (data.status === "processing") {
+        // ... (logic for processing status)
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content:
+              "در حال پردازش درخواست شما... این فرآیند ممکن است تا ۱۰ دقیقه طول بکشد.",
+          },
+        ]);
+        setIsPolling(true);
+
+        let attempts = 0;
+        const maxAttempts = 10;
+        pollingRef.current = setInterval(async () => {
+          if (!sessionId) return;
+          attempts += 1;
+          console.log(`Polling attempt ${attempts} for session ${sessionId}`);
+          const responseReceived = await checkResponse(sessionId);
+          if (responseReceived || attempts >= maxAttempts) {
+            if (pollingRef.current) clearInterval(pollingRef.current);
+            setIsPolling(false);
+            if (!responseReceived && attempts >= maxAttempts) {
+              setError("پاسخ در زمان مورد انتظار دریافت نشد.");
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: "assistant",
+                  content: "🚫 خطا: پاسخ در زمان مورد انتظار دریافت نشد.",
+                },
+              ]);
+            }
+          }
+        }, 60000);
+      }
+    },
+    [sessionId, checkResponse]
+  ); // Its dependencies are sessionId and checkResponse
   const createNewSession = useCallback(async (clerkId: string) => {
     try {
       const response = await fetch("/api/sessions", {
@@ -563,7 +572,7 @@ function Chat() {
 
   type StopRecordingHandler = (save: boolean) => Promise<void>;
 
-const handleVoiceUpload = useCallback(
+  const handleVoiceUpload = useCallback(
     async (file: File) => {
       if (!user?.id || !sessionId) {
         setError("کاربر احراز هویت نشده است یا جلسه فعال یافت نشد.");
@@ -619,27 +628,36 @@ const handleVoiceUpload = useCallback(
 
         const responseText = await legalResponse.text();
         console.log(
-          `Legal query API response: ${responseText.substring(0, 50)}..., status: ${legalResponse.status}`
+          `Legal query API response: ${responseText.substring(
+            0,
+            50
+          )}..., status: ${legalResponse.status}`
         );
 
-        if (!legalResponse.ok && legalResponse.status !== 202) { // Allow 202 to pass through
+        if (!legalResponse.ok && legalResponse.status !== 202) {
+          // Allow 202 to pass through
           let errorData;
           try {
             errorData = JSON.parse(responseText);
           } catch {
-            throw new Error(`Failed to initiate legal query: HTTP ${legalResponse.status}`);
+            throw new Error(
+              `Failed to initiate legal query: HTTP ${legalResponse.status}`
+            );
           }
-          throw new Error(errorData.error || `Failed to initiate legal query: HTTP ${legalResponse.status}`);
+          throw new Error(
+            errorData.error ||
+              `Failed to initiate legal query: HTTP ${legalResponse.status}`
+          );
         }
 
         const legalData: ChatResponse = JSON.parse(responseText);
         console.log("Parsed API response:", legalData);
-        
+
         // Use the helper function to handle the response
         handleApiResponse(legalData);
-
       } catch (e: unknown) {
-        const errorMessage = e instanceof Error ? e.message : "An unknown error occurred";
+        const errorMessage =
+          e instanceof Error ? e.message : "An unknown error occurred";
         console.error("Failed to process voice upload:", errorMessage);
         setError(`خطا در پردازش فایل صوتی: ${errorMessage}`);
         setMessages((prev) => [
@@ -685,7 +703,7 @@ const handleVoiceUpload = useCallback(
 
   type SendHandler = () => Promise<void>;
 
-const handleSend: SendHandler = useCallback(async () => {
+  const handleSend: SendHandler = useCallback(async () => {
     if (isRecording) {
       console.log("handleSend ignored: Recording in progress");
       await handleStopRecording(true);
@@ -741,27 +759,36 @@ const handleSend: SendHandler = useCallback(async () => {
 
       const responseText = await response.text();
       console.log(
-        `Legal query API response: ${responseText.substring(0, 50)}..., status: ${response.status}`
+        `Legal query API response: ${responseText.substring(
+          0,
+          50
+        )}..., status: ${response.status}`
       );
 
-      if (!response.ok && response.status !== 202) { // Allow 202 to pass through
+      if (!response.ok && response.status !== 202) {
+        // Allow 202 to pass through
         let errorData;
         try {
           errorData = JSON.parse(responseText);
         } catch {
-          throw new Error(`Failed to initiate legal query: HTTP ${response.status}`);
+          throw new Error(
+            `Failed to initiate legal query: HTTP ${response.status}`
+          );
         }
-        throw new Error(errorData.error || `Failed to initiate legal query: HTTP ${response.status}`);
+        throw new Error(
+          errorData.error ||
+            `Failed to initiate legal query: HTTP ${response.status}`
+        );
       }
-      
+
       const data: ChatResponse = JSON.parse(responseText);
       console.log("Parsed API response:", data);
-      
+
       // Use the helper function to handle the response
       handleApiResponse(data);
-
     } catch (e: unknown) {
-      const errorMessage = e instanceof Error ? e.message : "An unknown error occurred";
+      const errorMessage =
+        e instanceof Error ? e.message : "An unknown error occurred";
       console.error("خطا در ارسال پیام:", errorMessage);
       setError(`خطا: ${errorMessage}`);
       setMessages((prev) => [
@@ -1411,7 +1438,6 @@ const handleSend: SendHandler = useCallback(async () => {
   const handleFileIconClick = useCallback(() => {
     if (fileContent) {
       setFileContent(null);
-      // Also clear the input if it was derived from the file
       setInput("");
     } else {
       fileInputRef.current?.click();
@@ -1462,14 +1488,14 @@ const handleSend: SendHandler = useCallback(async () => {
     init();
   }, [user, handleActiveSession, createNewSession]);
 
-   useEffect(() => {
+  useEffect(() => {
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTo({
         top: messagesContainerRef.current.scrollHeight,
         behavior: "smooth",
       });
     }
-  }, [messages]); // Trigger on messages change
+  }, [messages]);
 
   if (!user) {
     return (
@@ -1489,23 +1515,37 @@ const handleSend: SendHandler = useCallback(async () => {
           flexDirection: "column",
           bgcolor: "#000000",
           borderRadius: "20px",
-          p: 1,
+          p: { xs: 1, sm: 2 }, // Add some padding for mobile
           gap: 2,
           direction: "rtl",
         }}
       >
+        {/* =============================================================== */}
+        {/* ======================= MODIFIED HEADER ======================= */}
+        {/* =============================================================== */}
         <Box
           sx={{
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
             flexShrink: 0,
+            flexDirection: { xs: "column", sm: "row" },
+            gap: { xs: 2, sm: 1 },
           }}
         >
           <Typography variant="h5" color="text.primary">
             وکیل هوش مصنوعی ⚖️
           </Typography>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+              flexDirection: { xs: "column", sm: "row" },
+              width: { xs: "100%", sm: "auto" },
+              order: { xs: 1, sm: 0 }, // Ensure correct visual order on mobile
+            }}
+          >
             {(isLoading || isPolling) && (
               <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                 <Typography variant="body2" color="text.secondary">
@@ -1519,6 +1559,9 @@ const handleSend: SendHandler = useCallback(async () => {
               startIcon={<HistoryIcon sx={{ ml: 1.5, fontWeight: "bold" }} />}
               onClick={() => setShowHistory((prev) => !prev)}
               disabled={isLoading || isPolling || isProcessing || isRecording}
+              sx={{
+                width: { xs: "100%", sm: "auto" },
+              }}
             >
               {showHistory ? "مخفی کردن" : "تاریخچه"}
             </Button>
@@ -1526,44 +1569,42 @@ const handleSend: SendHandler = useCallback(async () => {
         </Box>
 
         <Collapse in={showHistory} sx={{ flexShrink: 0 }}>
-         <ChatList
-    clerkId={user.id}
-    onSessionSelect={handleSessionSelect}
-    onActiveSession={handleActiveSession}
-    activeSessionId={sessionId} // <-- ADD THIS LINE
-  />
+          <ChatList
+            clerkId={user.id}
+            onSessionSelect={handleSessionSelect}
+            onActiveSession={handleActiveSession}
+            activeSessionId={sessionId}
+          />
         </Collapse>
 
-       <Box
+        <Box
           className="messages"
-           ref={messagesContainerRef} // NEW: Attach ref here
-  sx={{
-    flexGrow: 1,
-    maxHeight: "60vh",
-    overflowY: "auto",
-    p: 2,
-    bgcolor: "background.default",
-    borderRadius: "16px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 2,
-    // --- Scrollbar Styles Start Here ---
-    "&::-webkit-scrollbar": {
-      width: "8px",
-    },
-    "&::-webkit-scrollbar-track": {
-      backgroundColor: "rgba(0, 0, 0, 0.2)",
-      borderRadius: "8px",
-    },
-    "&::-webkit-scrollbar-thumb": {
-      backgroundColor: theme.palette.primary.main,
-      borderRadius: "8px",
-      border: "2px solid transparent",
-      backgroundClip: "content-box",
-    },
-    // --- Scrollbar Styles End Here ---
-  }}
->
+          ref={messagesContainerRef}
+          sx={{
+            flexGrow: 1,
+            maxHeight: "60vh",
+            overflowY: "auto",
+            p: 2,
+            bgcolor: "background.default",
+            borderRadius: "16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            "&::-webkit-scrollbar": {
+              width: "8px",
+            },
+            "&::-webkit-scrollbar-track": {
+              backgroundColor: "rgba(0, 0, 0, 0.2)",
+              borderRadius: "8px",
+            },
+            "&::-webkit-scrollbar-thumb": {
+              backgroundColor: theme.palette.primary.main,
+              borderRadius: "8px",
+              border: "2px solid transparent",
+              backgroundClip: "content-box",
+            },
+          }}
+        >
           {messages.length === 0 && (
             <Box sx={{ m: "auto", textAlign: "center" }}>
               <Typography variant="h6" color="text.primary">
@@ -1722,12 +1763,8 @@ const handleSend: SendHandler = useCallback(async () => {
               </IconButton>
             </Box>
           </Collapse>
-      
         </Box>
 
-        {/* =============================================================== */}
-        {/* ==================== MODIFIED INPUT PANEL ===================== */}
-        {/* =============================================================== */}
         <Box
           sx={{
             display: "flex",
@@ -1866,17 +1903,17 @@ const handleSend: SendHandler = useCallback(async () => {
           />
         </Box>
         {/* =============================================================== */}
-        {/* ================= END MODIFIED INPUT PANEL ==================== */}
+        {/* ================= MODIFIED ACTION BUTTONS ===================== */}
         {/* =============================================================== */}
-
         <Box
           sx={{
             display: "flex",
-            flexWrap: "wrap",
             justifyContent: "flex-start",
-            gap: "20px", // Use a fixed gap value for easier calculation
+            gap: "20px",
             flexShrink: 1,
             width: "100%",
+            flexDirection: { xs: "column", sm: "row" },
+            flexWrap: "wrap",
           }}
         >
           <Button
@@ -1890,8 +1927,7 @@ const handleSend: SendHandler = useCallback(async () => {
               isProcessing ||
               isRecording
             }
-            // Use calc() for precise width distribution
-            sx={{ width: "calc(50% - 10px)" }}
+            sx={{ width: { xs: "100%", sm: "calc(50% - 10px)" } }}
           >
             جلسه جدید
           </Button>
@@ -1910,7 +1946,7 @@ const handleSend: SendHandler = useCallback(async () => {
                   msg.role === "assistant" && !isSystemMessage(msg.content)
               )
             }
-            sx={{ width: "calc(50% - 10px)" }}
+            sx={{ width: { xs: "100%", sm: "calc(50% - 10px)" } }}
           >
             دانلود پاسخ (Word)
           </Button>
@@ -1926,7 +1962,7 @@ const handleSend: SendHandler = useCallback(async () => {
               isRecording ||
               !excelFile
             }
-            sx={{ width: "calc(50% - 10px)" }}
+            sx={{ width: { xs: "100%", sm: "calc(50% - 10px)" } }}
           >
             دانلود منابع (Excel)
           </Button>
@@ -1942,7 +1978,7 @@ const handleSend: SendHandler = useCallback(async () => {
               isRecording ||
               (!excelFile?.forms?.length && !wordDocument)
             }
-            sx={{ width: "calc(50% - 10px)" }}
+            sx={{ width: { xs: "100%", sm: "calc(50% - 10px)" } }}
           >
             دانلود فرم‌ها
           </Button>
