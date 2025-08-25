@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
-import { dark } from "@clerk/themes"; // <-- 1. Import Clerk's dark theme
-import { faIR } from "@clerk/localizations"; // <-- 2. Import Persian localization
+import { dark } from "@clerk/themes";
+import { faIR } from "@clerk/localizations";
 import { FormProvider } from "@/context/FormContext";
 import Navbar from "@/components/Navbar";
 import ThemeProviderWrapper from "@/components/Themewraper";
@@ -39,7 +39,6 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // 3. Add the localization and appearance props to the provider
     <ClerkProvider
       localization={faIR}
       appearance={{
@@ -49,6 +48,7 @@ export default function RootLayout({
           colorText: "rgb(236, 236, 236)",
           colorBackground: "rgb(18, 18, 32)",
         },
+        // The old avatar styles have been removed from here
         elements: {
           formButtonPrimary: {
             "&:hover": {

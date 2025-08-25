@@ -93,3 +93,15 @@ button:disabled {
   background-color: #ccc;
   cursor: not-allowed;
 }
+/* Add this to the end of your app/globals.css file */
+
+/* --- Clerk Avatar Override --- */
+/* This targets the avatar circle and sets its background color */
+.cl-user-button-avatar {
+  background-color: rgb(252, 202, 71) !important;
+}
+
+/* This targets the user's initial inside the circle */
+.cl-initials {
+  color: rgb(18, 18, 32) !important;
+}
